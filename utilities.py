@@ -5,6 +5,7 @@ import os
 import numpy as np
 from monai.losses import DiceLoss
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 def dice_metric(predicted, target):
     '''
@@ -28,7 +29,7 @@ def calculate_weights(val1, val2):
     weights = weights/summ
     return torch.tensor(weights, dtype=torch.float32)
 
-def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , device=torch.device("cuda:0")):
+def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , device=torch.device("cuda:2")):
     best_metric = -1
     best_metric_epoch = -1
     save_loss_train = []
@@ -36,6 +37,7 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
     save_metric_train = []
     save_metric_test = []
     train_loader, test_loader = data_in
+    writer = SummaryWriter(log_dir=os.path.join(model_dir, 'runs'))
 
     for epoch in range(max_epochs):
         print("-" * 10)
@@ -83,6 +85,10 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
         save_metric_train.append(epoch_metric_train)
         np.save(os.path.join(model_dir, 'metric_train.npy'), save_metric_train)
 
+        writer.add_scalar('Loss/train', train_epoch_loss, epoch)
+        writer.add_scalar('Dice/train', epoch_metric_train, epoch)
+        writer.flush()
+
         if (epoch + 1) % test_interval == 0:
 
             model.eval()
@@ -119,6 +125,7 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
                 save_metric_test.append(epoch_metric_test)
                 np.save(os.path.join(model_dir, 'metric_test.npy'), save_metric_test)
 
+
                 if epoch_metric_test > best_metric:
                     best_metric = epoch_metric_test
                     best_metric_epoch = epoch + 1
@@ -130,16 +137,19 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
                     f"\nbest mean dice: {best_metric:.4f} "
                     f"at epoch: {best_metric_epoch}"
                 )
-
-
+                writer.add_scalar('Loss/test', test_epoch_loss, epoch)
+                writer.add_scalar('Dice/test', epoch_metric_test, epoch)
+                writer.flush()
+    
+    writer.close()
     print(
         f"train completed, best_metric: {best_metric:.4f} "
         f"at epoch: {best_metric_epoch}")
-
+    
 
 def show_patient(data, SLICE_NUMBER=1, train=True, test=False):
     """
-    This function is to show one patient from your datasets, so that you can si if the it is okay or you need 
+    This function is to show one patient from your datasets, so that you can see if the it is okay or you need 
     to change/delete something.
 
     `data`: this parameter should take the patients from the data loader, which means you need to can the function
@@ -157,14 +167,15 @@ def show_patient(data, SLICE_NUMBER=1, train=True, test=False):
 
     
     if train:
-        plt.figure("Visualization Train", (12, 6))
-        plt.subplot(1, 2, 1)
+        plt.figure("Visualization Train", (18, 6))
+        plt.subplot(1, 6, 1)
         plt.title(f"vol {SLICE_NUMBER}")
         plt.imshow(view_train_patient["vol"][0, 0, :, :, SLICE_NUMBER], cmap="gray")
 
-        plt.subplot(1, 2, 2)
-        plt.title(f"seg {SLICE_NUMBER}")
-        plt.imshow(view_train_patient["seg"][0, 0, :, :, SLICE_NUMBER])
+        for i in range(5):
+            plt.subplot(1, 6, i+2)
+            plt.title(f"seg {i} {SLICE_NUMBER}")
+            plt.imshow(view_train_patient["seg"][0, i, :, :, SLICE_NUMBER])
         plt.show()
     
     if test:
@@ -173,11 +184,12 @@ def show_patient(data, SLICE_NUMBER=1, train=True, test=False):
         plt.title(f"vol {SLICE_NUMBER}")
         plt.imshow(view_test_patient["vol"][0, 0, :, :, SLICE_NUMBER], cmap="gray")
 
-        plt.subplot(1, 2, 2)
-        plt.title(f"seg {SLICE_NUMBER}")
-        plt.imshow(view_test_patient["seg"][0, 0, :, :, SLICE_NUMBER])
+        for i in range(5):
+            plt.subplot(1, 6, i+2)
+            plt.title(f"seg {i} {SLICE_NUMBER}")
+            plt.imshow(view_test_patient["seg"][0, i, :, :, SLICE_NUMBER])
         plt.show()
-
+    
 
 def calculate_pixels(data):
     val = np.zeros((1, 2))
